@@ -10,6 +10,7 @@ It simulates a Modbus TCP device, reads the cell state through a gateway, conver
 - A Modbus-to-MQTT gateway that publishes production status.
 - A local Mosquitto broker for testing.
 - A subscriber helper that prints the MQTT messages.
+- A browser dashboard for live cell visualization.
 - A simple ROI calculator for the automation business case.
 
 ## Architecture
@@ -34,6 +35,12 @@ You should see the simulator updating registers, the gateway publishing JSON, an
 
 The MQTT broker runs on port `1883` inside Docker and is exposed on your Mac as `1884` to avoid conflicts with any existing local MQTT broker.
 
+Open the live dashboard at:
+
+```text
+http://localhost:8080
+```
+
 ## Run locally
 
 Create or activate a virtual environment, then install dependencies:
@@ -52,13 +59,16 @@ docker compose up mqtt
 
 With Docker, connect host tools to MQTT on `localhost:1884`. The Python gateway and subscriber still use `1883` when they run inside Docker.
 
-In separate terminals, run:
+If you run the Python scripts on your Mac while the MQTT broker is running in Docker, set `MQTT_PORT=1884`. In separate terminals, run:
 
 ```bash
 python src/modbus_simulator.py
-python src/modbus_to_mqtt_gateway.py
-python src/mqtt_subscriber.py
+MQTT_PORT=1884 python src/modbus_to_mqtt_gateway.py
+MQTT_PORT=1884 python src/mqtt_subscriber.py
+MQTT_PORT=1884 DASHBOARD_HOST=127.0.0.1 python src/dashboard.py
 ```
+
+Then open `http://localhost:8080`.
 
 ## Register Map
 

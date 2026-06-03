@@ -40,3 +40,17 @@ services:
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
       MQTT_TOPIC: factory/light_automation/cobot_cell_01/status
+
+  dashboard:
+    build: .
+    command: python src/dashboard.py
+    depends_on:
+      - mqtt
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      MQTT_TOPIC: factory/light_automation/cobot_cell_01/status
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: 8080
+    ports:
+      - "8080:8080"
