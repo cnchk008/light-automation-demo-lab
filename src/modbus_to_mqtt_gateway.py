@@ -1,4 +1,5 @@
 import json
+import socket
 import time
 
 from paho.mqtt import publish
@@ -30,33 +31,42 @@ def read_registers(client: ModbusTcpClient) -> list[int]:
 
 
 def publish_payload(payload: dict) -> None:
-    publish.single(
-        MQTT_TOPIC,
-        payload=json.dumps(payload, separators=(",", ":")),
-        hostname=MQTT_HOST,
-        port=MQTT_PORT,
-        qos=1,
-    )
+    try:
+        publish.single(
+            MQTT_TOPIC,
+            payload=json.dumps(payload, separators=(",", ":")),
+            hostname=MQTT_HOST,
+            port=MQTT_PORT,
+            qos=1,
+        )
+    except OSError as exc:
+        raise ConnectionError(
+            f"MQTT not reachable at {MQTT_HOST}:{MQTT_PORT}: {exc}"
+        ) from exc
 
 
 def run_gateway() -> None:
-    client = ModbusTcpClient(MODBUS_HOST, port=MODBUS_PORT, timeout=3)
     print(
         "Starting gateway: "
         f"Modbus {MODBUS_HOST}:{MODBUS_PORT} -> MQTT {MQTT_HOST}:{MQTT_PORT}/{MQTT_TOPIC}"
     )
 
     while True:
+        client = ModbusTcpClient(MODBUS_HOST, port=MODBUS_PORT, timeout=3)
         try:
             if not client.connect():
-                raise ConnectionError("Could not connect to Modbus simulator")
+                raise ConnectionError(
+                    f"Modbus not reachable at {MODBUS_HOST}:{MODBUS_PORT}"
+                )
 
             registers = read_registers(client)
             payload = registers_to_payload(registers)
             publish_payload(payload)
             print(f"Published: {json.dumps(payload)}")
-        except Exception as exc:
+        except (ConnectionError, socket.error) as exc:
             print(f"Gateway waiting: {exc}")
+        except Exception as exc:
+            print(f"Gateway error: {exc}")
         finally:
             client.close()
 

@@ -1,27 +1,56 @@
 services:
   mqtt:
     image: eclipse-mosquitto:2
+    restart: unless-stopped
+    command: ["mosquitto", "-c", "/mosquitto/config/mosquitto.conf", "-v"]
     ports:
       - "1884:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "127.0.0.1", "-p", "1883", "-t", "healthcheck", "-m", "ok"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 2s
+
+  mqtt-smoke-test:
+    build: .
+    command: python src/healthcheck.py
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
 
   modbus-simulator:
     build: .
+    restart: unless-stopped
     command: python src/modbus_simulator.py
+    ports:
+      - "5020:5020"
+    healthcheck:
+      test: ["CMD", "python", "src/healthcheck.py"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+      start_period: 3s
     environment:
       MODBUS_HOST: 0.0.0.0
       MODBUS_PORT: 5020
       MODBUS_UNIT_ID: 1
-    ports:
-      - "5020:5020"
+      HEALTHCHECK_SERVICE: modbus
 
   gateway:
     build: .
+    restart: unless-stopped
     command: python src/modbus_to_mqtt_gateway.py
     depends_on:
-      - modbus-simulator
-      - mqtt
+      modbus-simulator:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
     environment:
       MODBUS_HOST: modbus-simulator
       MODBUS_PORT: 5020
@@ -30,12 +59,21 @@ services:
       MQTT_PORT: 1883
       MQTT_TOPIC: factory/light_automation/cobot_cell_01/status
       POLL_INTERVAL_SECONDS: 2
+      HEALTHCHECK_SERVICE: modbus
+    healthcheck:
+      test: ["CMD", "python", "src/healthcheck.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   subscriber:
     build: .
+    restart: unless-stopped
     command: python src/mqtt_subscriber.py
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
     environment:
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
@@ -43,9 +81,11 @@ services:
 
   dashboard:
     build: .
+    restart: unless-stopped
     command: python src/dashboard.py
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
     environment:
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
