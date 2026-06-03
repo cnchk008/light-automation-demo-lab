@@ -1,0 +1,42 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  modbus-simulator:
+    build: .
+    command: python src/modbus_simulator.py
+    environment:
+      MODBUS_HOST: 0.0.0.0
+      MODBUS_PORT: 5020
+      MODBUS_UNIT_ID: 1
+    ports:
+      - "5020:5020"
+
+  gateway:
+    build: .
+    command: python src/modbus_to_mqtt_gateway.py
+    depends_on:
+      - modbus-simulator
+      - mqtt
+    environment:
+      MODBUS_HOST: modbus-simulator
+      MODBUS_PORT: 5020
+      MODBUS_UNIT_ID: 1
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      MQTT_TOPIC: factory/light_automation/cobot_cell_01/status
+      POLL_INTERVAL_SECONDS: 2
+
+  subscriber:
+    build: .
+    command: python src/mqtt_subscriber.py
+    depends_on:
+      - mqtt
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      MQTT_TOPIC: factory/light_automation/cobot_cell_01/status

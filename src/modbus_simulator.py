@@ -1,94 +1,96 @@
 import random
-import threading
-import time
+from dataclasses import dataclass
 
-from pymodbus.datastore import (
-    ModbusSequentialDataBlock,
-    ModbusServerContext,
-    ModbusSlaveContext,
-)
-from pymodbus.device import ModbusDeviceIdentification
+from pymodbus import ModbusDeviceIdentification
 from pymodbus.server import StartTcpServer
+from pymodbus.simulator import DataType, SimData, SimDevice
 
-from config import MODBUS_HOST, MODBUS_PORT
-
-
-# Holding register map:
-# 0 = part_present
-# 1 = safety_gate_closed
-# 2 = emergency_stop_ok
-# 3 = robot_busy
-# 4 = fault_code
-# 5 = cycle_count
-# 6 = average_cycle_time_seconds
-# 7 = downtime_seconds
+from config import MODBUS_HOST, MODBUS_PORT, MODBUS_UNIT_ID
+from registers import REGISTER_COUNT, registers_to_payload
 
 
-def update_registers(context):
-    cycle_count = 0
-    downtime_seconds = 0
+@dataclass
+class CellState:
+    cycle_count: int = 0
+    downtime_seconds: int = 0
 
-    while True:
-        part_present = random.choice([0, 1])
-        safety_gate_closed = random.choice([1, 1, 1, 0])
-        emergency_stop_ok = random.choice([1, 1, 1, 1, 0])
-        robot_busy = random.choice([0, 1])
+    def next_registers(self) -> list[int]:
+        part_present = random.choice([0, 1, 1])
+        safety_gate_closed = random.choice([1, 1, 1, 1, 0])
+        emergency_stop_ok = random.choice([1, 1, 1, 1, 1, 0])
+        robot_busy = random.choice([0, 1, 1])
 
-        if safety_gate_closed == 0:
+        if not safety_gate_closed:
             fault_code = 101
-            downtime_seconds += 5
-        elif emergency_stop_ok == 0:
+            self.downtime_seconds += 5
+            robot_busy = 0
+        elif not emergency_stop_ok:
             fault_code = 201
-            downtime_seconds += 5
+            self.downtime_seconds += 5
+            robot_busy = 0
         else:
             fault_code = 0
 
-        if part_present == 1 and safety_gate_closed == 1 and emergency_stop_ok == 1:
-            cycle_count += 1
+        if part_present and safety_gate_closed and emergency_stop_ok and robot_busy:
+            self.cycle_count += 1
 
-        average_cycle_time = random.randint(8, 14)
-
-        values = [
+        return [
             part_present,
             safety_gate_closed,
             emergency_stop_ok,
             robot_busy,
             fault_code,
-            cycle_count,
-            average_cycle_time,
-            downtime_seconds,
+            self.cycle_count,
+            random.randint(8, 14),
+            self.downtime_seconds,
         ]
 
-        context[0].setValues(3, 0, values)
-        print(f"Updated Modbus registers: {values}")
 
-        time.sleep(5)
+state = CellState()
 
 
-def run_server():
-    store = ModbusSlaveContext(
-        hr=ModbusSequentialDataBlock(0, [0] * 100)
-    )
+async def refresh_registers(
+    function_code: int,
+    start_address: int,
+    address: int,
+    count: int,
+    current_registers: list[int],
+    set_values: list[int] | list[bool] | None,
+) -> None:
+    if set_values is not None or function_code not in {3, 4}:
+        return
 
-    context = ModbusServerContext(slaves=store, single=True)
+    values = state.next_registers()
+    current_registers[:REGISTER_COUNT] = values
+    payload = registers_to_payload(values)
+    print(f"Simulator registers @ {start_address}: {values} -> {payload['status']}")
 
+
+def device_identity() -> ModbusDeviceIdentification:
     identity = ModbusDeviceIdentification()
     identity.VendorName = "Demo Automation Lab"
     identity.ProductCode = "LADL"
     identity.ProductName = "Light Automation Cobot Cell Simulator"
     identity.ModelName = "Cobot Cell 01"
     identity.MajorMinorRevision = "1.0"
+    return identity
 
-    updater = threading.Thread(target=update_registers, args=(context,), daemon=True)
-    updater.start()
+
+def run_server() -> None:
+    device = SimDevice(
+        id=MODBUS_UNIT_ID,
+        simdata=SimData(
+            address=0,
+            count=100,
+            values=0,
+            datatype=DataType.REGISTERS,
+        ),
+        identity=device_identity(),
+        action=refresh_registers,
+    )
 
     print(f"Starting Modbus TCP simulator on {MODBUS_HOST}:{MODBUS_PORT}")
-
-    StartTcpServer(
-        context=context,
-        identity=identity,
-        address=(MODBUS_HOST, MODBUS_PORT),
-    )
+    StartTcpServer(device, address=(MODBUS_HOST, MODBUS_PORT))
 
 
 if __name__ == "__main__":

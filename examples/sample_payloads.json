@@ -1,0 +1,36 @@
+[
+  {
+    "cell_id": "cobot_cell_01",
+    "timestamp": "2026-06-03T09:00:00+00:00",
+    "status": {
+      "part_present": true,
+      "safety_gate_closed": true,
+      "emergency_stop_ok": true,
+      "robot_busy": true,
+      "fault_code": 0,
+      "fault_label": "none"
+    },
+    "metrics": {
+      "cycle_count": 42,
+      "average_cycle_time_seconds": 11,
+      "downtime_seconds": 0
+    }
+  },
+  {
+    "cell_id": "cobot_cell_01",
+    "timestamp": "2026-06-03T09:01:00+00:00",
+    "status": {
+      "part_present": false,
+      "safety_gate_closed": false,
+      "emergency_stop_ok": true,
+      "robot_busy": false,
+      "fault_code": 101,
+      "fault_label": "safety_gate_open"
+    },
+    "metrics": {
+      "cycle_count": 42,
+      "average_cycle_time_seconds": 12,
+      "downtime_seconds": 5
+    }
+  }
+]
