@@ -32,6 +32,8 @@ docker compose up --build
 
 You should see the simulator updating registers, the gateway publishing JSON, and the subscriber printing messages.
 
+The MQTT broker runs on port `1883` inside Docker and is exposed on your Mac as `1884` to avoid conflicts with any existing local MQTT broker.
+
 ## Run locally
 
 Create or activate a virtual environment, then install dependencies:
@@ -47,6 +49,8 @@ Start a local MQTT broker. With Docker:
 ```bash
 docker compose up mqtt
 ```
+
+With Docker, connect host tools to MQTT on `localhost:1884`. The Python gateway and subscriber still use `1883` when they run inside Docker.
 
 In separate terminals, run:
 
