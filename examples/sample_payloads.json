@@ -1,6 +1,8 @@
 [
   {
     "cell_id": "cobot_cell_01",
+    "protocol": "modbus_tcp",
+    "device_type": "cobot_cell",
     "timestamp": "2026-06-03T09:00:00+00:00",
     "status": {
       "part_present": true,
@@ -18,6 +20,8 @@
   },
   {
     "cell_id": "cobot_cell_01",
+    "protocol": "modbus_tcp",
+    "device_type": "cobot_cell",
     "timestamp": "2026-06-03T09:01:00+00:00",
     "status": {
       "part_present": false,
@@ -31,6 +35,24 @@
       "cycle_count": 42,
       "average_cycle_time_seconds": 12,
       "downtime_seconds": 5
+    }
+  },
+  {
+    "cell_id": "profinet_feeder_01",
+    "protocol": "profinet",
+    "device_type": "part_feeder",
+    "timestamp": "2026-06-03T09:01:00+00:00",
+    "status": {
+      "feeder_running": true,
+      "transfer_ready": true,
+      "buffer_level_percent": 74,
+      "fault_code": 0,
+      "fault_label": "none"
+    },
+    "metrics": {
+      "feed_count": 18,
+      "jam_count": 1,
+      "uptime_seconds": 120
     }
   }
 ]

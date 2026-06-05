@@ -8,12 +8,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import paho.mqtt.client as mqtt
 
-from config import DASHBOARD_HOST, DASHBOARD_PORT, MQTT_HOST, MQTT_PORT, MQTT_TOPIC
+from config import DASHBOARD_HOST, DASHBOARD_PORT, MQTT_HOST, MQTT_PORT, MQTT_TOPIC_FILTER
 
 
 clients: list[queue.Queue[dict]] = []
 clients_lock = threading.Lock()
-latest_payload: dict | None = None
+latest_payloads: dict[str, dict] = {}
 latest_received_at: float | None = None
 mqtt_connected = False
 
@@ -334,6 +334,32 @@ DASHBOARD_HTML = """<!doctype html>
       flex-wrap: wrap;
     }
 
+    .device-list {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .device-button {
+      min-height: 42px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      box-shadow: none;
+    }
+
+    .device-button.active {
+      border-color: #147d64;
+      background: #dff4eb;
+      color: #0f5f4d;
+      font-weight: 720;
+    }
+
     @media (max-width: 820px) {
       .header-inner {
         align-items: flex-start;
@@ -372,6 +398,8 @@ DASHBOARD_HTML = """<!doctype html>
     </header>
 
     <main>
+      <section class="device-list" id="device-list"></section>
+
       <div class="grid">
         <section class="panel">
           <h2 class="section-title">Cell State</h2>
@@ -388,19 +416,19 @@ DASHBOARD_HTML = """<!doctype html>
               </div>
               <div class="signals">
                 <div class="signal">
-                  <div class="label">Safety Gate</div>
+                  <div class="label" id="safety-gate-label">Safety Gate</div>
                   <div class="value" id="safety-gate">--</div>
                 </div>
                 <div class="signal">
-                  <div class="label">E-Stop</div>
+                  <div class="label" id="estop-label">E-Stop</div>
                   <div class="value" id="estop">--</div>
                 </div>
                 <div class="signal">
-                  <div class="label">Robot</div>
+                  <div class="label" id="robot-label">Robot</div>
                   <div class="value" id="robot">--</div>
                 </div>
                 <div class="signal">
-                  <div class="label">Part</div>
+                  <div class="label" id="part-present-label">Part</div>
                   <div class="value" id="part-present">--</div>
                 </div>
               </div>
@@ -412,16 +440,16 @@ DASHBOARD_HTML = """<!doctype html>
           <h2 class="section-title">Production Metrics</h2>
           <div class="metrics">
             <div class="metric">
-              <div class="label">Cycles</div>
+              <div class="label" id="cycles-label">Cycles</div>
               <div><span class="metric-value" id="cycles">--</span></div>
             </div>
             <div class="metric">
-              <div class="label">Cycle Time</div>
-              <div><span class="metric-value" id="cycle-time">--</span> <span class="unit">s</span></div>
+              <div class="label" id="cycle-time-label">Cycle Time</div>
+              <div><span class="metric-value" id="cycle-time">--</span> <span class="unit" id="cycle-time-unit">s</span></div>
             </div>
             <div class="metric">
-              <div class="label">Downtime</div>
-              <div><span class="metric-value" id="downtime">--</span> <span class="unit">s</span></div>
+              <div class="label" id="downtime-label">Downtime</div>
+              <div><span class="metric-value" id="downtime">--</span> <span class="unit" id="downtime-unit">s</span></div>
             </div>
           </div>
           <div class="chart-wrap">
@@ -429,7 +457,7 @@ DASHBOARD_HTML = """<!doctype html>
           </div>
           <div class="footer-line">
             <span id="updated-at">Last update --</span>
-            <span>Topic factory/light_automation/cobot_cell_01/status</span>
+            <span id="topic">Topic --</span>
           </div>
         </section>
       </div>
@@ -437,25 +465,39 @@ DASHBOARD_HTML = """<!doctype html>
   </div>
 
   <script>
-    const history = [];
+    const devices = new Map();
+    const histories = new Map();
     const maxPoints = 36;
+    let activeDeviceId = null;
+    let activeTrendLabels = ["cycles", "cycle time", "downtime"];
     const ids = {
       dot: document.getElementById("connection-dot"),
       connection: document.getElementById("connection-text"),
       cellId: document.getElementById("cell-id"),
+      deviceList: document.getElementById("device-list"),
       machine: document.getElementById("machine"),
       part: document.getElementById("part"),
       faultBanner: document.getElementById("fault-banner"),
       faultLabel: document.getElementById("fault-label"),
       faultCode: document.getElementById("fault-code"),
+      safetyGateLabel: document.getElementById("safety-gate-label"),
       safetyGate: document.getElementById("safety-gate"),
+      estopLabel: document.getElementById("estop-label"),
       estop: document.getElementById("estop"),
+      robotLabel: document.getElementById("robot-label"),
       robot: document.getElementById("robot"),
+      partPresentLabel: document.getElementById("part-present-label"),
       partPresent: document.getElementById("part-present"),
+      cyclesLabel: document.getElementById("cycles-label"),
       cycles: document.getElementById("cycles"),
+      cycleTimeLabel: document.getElementById("cycle-time-label"),
       cycleTime: document.getElementById("cycle-time"),
+      cycleTimeUnit: document.getElementById("cycle-time-unit"),
+      downtimeLabel: document.getElementById("downtime-label"),
       downtime: document.getElementById("downtime"),
+      downtimeUnit: document.getElementById("downtime-unit"),
       updatedAt: document.getElementById("updated-at"),
+      topic: document.getElementById("topic"),
       trend: document.getElementById("trend")
     };
 
@@ -463,37 +505,139 @@ DASHBOARD_HTML = """<!doctype html>
       return value ? yes : no;
     }
 
+    function protocolLabel(protocol) {
+      if (protocol === "modbus_tcp") return "Modbus TCP";
+      if (protocol === "profinet") return "Profinet";
+      return protocol || "Unknown";
+    }
+
+    function titleCase(value) {
+      return String(value || "")
+        .replaceAll("_", " ")
+        .replace(/\\b\\w/g, (letter) => letter.toUpperCase());
+    }
+
+    function trendFor(payload) {
+      const metrics = payload.metrics || {};
+      const status = payload.status || {};
+
+      if (payload.device_type === "part_feeder") {
+        return {
+          labels: ["feeds", "buffer", "jams"],
+          point: {
+            a: Number(metrics.feed_count || 0),
+            b: Number(status.buffer_level_percent || 0),
+            c: Number(metrics.jam_count || 0)
+          }
+        };
+      }
+
+      return {
+        labels: ["cycles", "cycle time", "downtime"],
+        point: {
+          a: Number(metrics.cycle_count || 0),
+          b: Number(metrics.average_cycle_time_seconds || 0),
+          c: Number(metrics.downtime_seconds || 0)
+        }
+      };
+    }
+
+    function appendHistory(payload) {
+      const deviceId = payload.cell_id || "unknown_device";
+      const history = histories.get(deviceId) || [];
+      history.push(trendFor(payload).point);
+      if (history.length > maxPoints) history.shift();
+      histories.set(deviceId, history);
+    }
+
+    function renderDeviceList() {
+      ids.deviceList.replaceChildren();
+
+      for (const [deviceId, payload] of devices.entries()) {
+        const button = document.createElement("button");
+        button.className = `device-button${deviceId === activeDeviceId ? " active" : ""}`;
+        button.type = "button";
+        button.textContent = `${deviceId} · ${protocolLabel(payload.protocol)}`;
+        button.addEventListener("click", () => selectDevice(deviceId));
+        ids.deviceList.appendChild(button);
+      }
+    }
+
+    function selectDevice(deviceId) {
+      activeDeviceId = deviceId;
+      renderDeviceList();
+      renderActive(devices.get(deviceId));
+    }
+
     function render(payload) {
       if (!payload || !payload.status || !payload.metrics) return;
 
+      const deviceId = payload.cell_id || "unknown_device";
+      devices.set(deviceId, payload);
+      appendHistory(payload);
+      if (!activeDeviceId) activeDeviceId = deviceId;
+      renderDeviceList();
+      if (deviceId !== activeDeviceId) return;
+      renderActive(payload);
+    }
+
+    function renderActive(payload) {
       const status = payload.status;
       const metrics = payload.metrics;
       const faulted = Number(status.fault_code) !== 0;
+      const isFeeder = payload.device_type === "part_feeder";
+      const trend = trendFor(payload);
+      activeTrendLabels = trend.labels;
 
       ids.dot.className = "dot ok";
       ids.connection.textContent = "Live";
-      ids.cellId.textContent = payload.cell_id || "cobot_cell_01";
-      ids.machine.classList.toggle("busy", Boolean(status.robot_busy));
+      ids.cellId.textContent = `${payload.cell_id || "device"} · ${protocolLabel(payload.protocol)}`;
+      ids.machine.classList.toggle("busy", Boolean(isFeeder ? status.feeder_running : status.robot_busy));
       ids.machine.classList.toggle("fault", faulted);
-      ids.part.classList.toggle("present", Boolean(status.part_present));
+      ids.part.classList.toggle("present", Boolean(isFeeder ? status.transfer_ready : status.part_present));
       ids.faultBanner.classList.toggle("warning", faulted);
       ids.faultLabel.textContent = faulted ? status.fault_label.replaceAll("_", " ") : "Normal";
       ids.faultCode.textContent = `Fault ${status.fault_code}`;
-      ids.safetyGate.textContent = yesNo(status.safety_gate_closed, "Closed", "Open");
-      ids.estop.textContent = yesNo(status.emergency_stop_ok, "Healthy", "Not OK");
-      ids.robot.textContent = yesNo(status.robot_busy, "Busy", "Idle");
-      ids.partPresent.textContent = yesNo(status.part_present, "Present", "Waiting");
-      ids.cycles.textContent = metrics.cycle_count;
-      ids.cycleTime.textContent = metrics.average_cycle_time_seconds;
-      ids.downtime.textContent = metrics.downtime_seconds;
-      ids.updatedAt.textContent = `Last update ${new Date(payload.timestamp).toLocaleTimeString()}`;
 
-      history.push({
-        cycle: Number(metrics.cycle_count || 0),
-        downtime: Number(metrics.downtime_seconds || 0),
-        cycleTime: Number(metrics.average_cycle_time_seconds || 0)
-      });
-      if (history.length > maxPoints) history.shift();
+      if (isFeeder) {
+        ids.safetyGateLabel.textContent = "Feeder";
+        ids.estopLabel.textContent = "Transfer";
+        ids.robotLabel.textContent = "Buffer";
+        ids.partPresentLabel.textContent = "Fault";
+        ids.safetyGate.textContent = yesNo(status.feeder_running, "Running", "Stopped");
+        ids.estop.textContent = yesNo(status.transfer_ready, "Ready", "Waiting");
+        ids.robot.textContent = `${status.buffer_level_percent}%`;
+        ids.partPresent.textContent = titleCase(status.fault_label);
+        ids.cyclesLabel.textContent = "Feeds";
+        ids.cycleTimeLabel.textContent = "Buffer";
+        ids.downtimeLabel.textContent = "Jams";
+        ids.cycles.textContent = metrics.feed_count;
+        ids.cycleTime.textContent = status.buffer_level_percent;
+        ids.cycleTimeUnit.textContent = "%";
+        ids.downtime.textContent = metrics.jam_count;
+        ids.downtimeUnit.textContent = "";
+      } else {
+        ids.safetyGateLabel.textContent = "Safety Gate";
+        ids.estopLabel.textContent = "E-Stop";
+        ids.robotLabel.textContent = "Robot";
+        ids.partPresentLabel.textContent = "Part";
+        ids.safetyGate.textContent = yesNo(status.safety_gate_closed, "Closed", "Open");
+        ids.estop.textContent = yesNo(status.emergency_stop_ok, "Healthy", "Not OK");
+        ids.robot.textContent = yesNo(status.robot_busy, "Busy", "Idle");
+        ids.partPresent.textContent = yesNo(status.part_present, "Present", "Waiting");
+        ids.cyclesLabel.textContent = "Cycles";
+        ids.cycleTimeLabel.textContent = "Cycle Time";
+        ids.downtimeLabel.textContent = "Downtime";
+        ids.cycles.textContent = metrics.cycle_count;
+        ids.cycleTime.textContent = metrics.average_cycle_time_seconds;
+        ids.cycleTimeUnit.textContent = "s";
+        ids.downtime.textContent = metrics.downtime_seconds;
+        ids.downtimeUnit.textContent = "s";
+      }
+
+      ids.updatedAt.textContent = `Last update ${new Date(payload.timestamp).toLocaleTimeString()}`;
+      ids.topic.textContent = `Topic ${payload._topic || "--"}`;
+
       drawTrend();
     }
 
@@ -517,17 +661,18 @@ DASHBOARD_HTML = """<!doctype html>
         ctx.stroke();
       }
 
-      drawLine(history.map((p) => p.cycle), "#147d64");
-      drawLine(history.map((p) => p.cycleTime), "#d7a938");
-      drawLine(history.map((p) => p.downtime), "#c2413b");
+      const history = histories.get(activeDeviceId) || [];
+      drawLine(history.map((p) => p.a), "#147d64");
+      drawLine(history.map((p) => p.b), "#d7a938");
+      drawLine(history.map((p) => p.c), "#c2413b");
 
       ctx.font = "13px system-ui, sans-serif";
       ctx.fillStyle = "#147d64";
-      ctx.fillText("cycles", pad, 20);
+      ctx.fillText(activeTrendLabels[0], pad, 20);
       ctx.fillStyle = "#b7791f";
-      ctx.fillText("cycle time", pad + 76, 20);
+      ctx.fillText(activeTrendLabels[1], pad + 76, 20);
       ctx.fillStyle = "#c2413b";
-      ctx.fillText("downtime", pad + 176, 20);
+      ctx.fillText(activeTrendLabels[2], pad + 176, 20);
     }
 
     function drawLine(values, color) {
@@ -581,7 +726,7 @@ def on_connect(client, userdata, flags, reason_code, properties=None) -> None:
     global mqtt_connected
     mqtt_connected = True
     print(f"Dashboard connected to MQTT with result {reason_code}")
-    client.subscribe(MQTT_TOPIC)
+    client.subscribe(MQTT_TOPIC_FILTER)
 
 
 def on_disconnect(client, userdata, flags=None, reason_code=None, properties=None) -> None:
@@ -591,13 +736,14 @@ def on_disconnect(client, userdata, flags=None, reason_code=None, properties=Non
 
 
 def on_message(client, userdata, message) -> None:
-    global latest_payload, latest_received_at
+    global latest_received_at
     try:
         payload = json.loads(message.payload.decode("utf-8"))
     except json.JSONDecodeError:
         return
 
-    latest_payload = payload
+    payload["_topic"] = message.topic
+    latest_payloads[payload.get("cell_id", message.topic)] = payload
     latest_received_at = time.time()
     broadcast(payload)
 
@@ -635,7 +781,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.end_headers()
             health = {
                 "mqtt_connected": mqtt_connected,
-                "has_payload": latest_payload is not None,
+                "has_payload": bool(latest_payloads),
+                "payload_count": len(latest_payloads),
             }
             self.wfile.write(json.dumps(health).encode("utf-8"))
             return
@@ -654,8 +801,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         try:
-            if latest_payload is not None:
-                self.send_snapshot(latest_payload)
+            for payload in latest_payloads.values():
+                self.send_snapshot(payload)
 
             while True:
                 try:

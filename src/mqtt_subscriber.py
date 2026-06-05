@@ -2,7 +2,7 @@ import json
 
 import paho.mqtt.client as mqtt
 
-from config import MQTT_HOST, MQTT_PORT, MQTT_TOPIC
+from config import MQTT_HOST, MQTT_PORT, MQTT_TOPIC_FILTER
 
 
 def make_client() -> mqtt.Client:
@@ -13,7 +13,7 @@ def make_client() -> mqtt.Client:
 
 def on_connect(client, userdata, flags, reason_code, properties=None) -> None:
     print(f"Connected to MQTT broker with result {reason_code}")
-    client.subscribe(MQTT_TOPIC)
+    client.subscribe(MQTT_TOPIC_FILTER)
 
 
 def on_message(client, userdata, message) -> None:
@@ -30,7 +30,7 @@ def run_subscriber() -> None:
     client.on_connect = on_connect
     client.on_message = on_message
 
-    print(f"Listening on mqtt://{MQTT_HOST}:{MQTT_PORT}/{MQTT_TOPIC}")
+    print(f"Listening on mqtt://{MQTT_HOST}:{MQTT_PORT}/{MQTT_TOPIC_FILTER}")
     client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
     client.loop_forever()
 

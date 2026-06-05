@@ -67,6 +67,34 @@ services:
       retries: 10
       start_period: 5s
 
+  profinet-gateway:
+    build: .
+    restart: unless-stopped
+    command: python src/profinet_to_mqtt_gateway.py
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    environment:
+      PROFINET_HOST: 0.0.0.0
+      PROFINET_PORT: 34964
+      PROFINET_DEVICE_ID: profinet_feeder_01
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      PROFINET_MQTT_TOPIC: factory/light_automation/profinet_feeder_01/status
+    ports:
+      - "34964:34964/udp"
+
+  profinet-simulator:
+    build: .
+    restart: unless-stopped
+    command: python src/profinet_simulator.py
+    depends_on:
+      - profinet-gateway
+    environment:
+      PROFINET_GATEWAY_HOST: profinet-gateway
+      PROFINET_PORT: 34964
+      PROFINET_CYCLE_TIME_MS: 1000
+
   subscriber:
     build: .
     restart: unless-stopped
@@ -77,7 +105,7 @@ services:
     environment:
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
-      MQTT_TOPIC: factory/light_automation/cobot_cell_01/status
+      MQTT_TOPIC_FILTER: factory/light_automation/+/status
 
   dashboard:
     build: .
@@ -89,7 +117,7 @@ services:
     environment:
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
-      MQTT_TOPIC: factory/light_automation/cobot_cell_01/status
+      MQTT_TOPIC_FILTER: factory/light_automation/+/status
       DASHBOARD_HOST: 0.0.0.0
       DASHBOARD_PORT: 8080
     ports:

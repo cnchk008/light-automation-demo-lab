@@ -48,6 +48,8 @@ def registers_to_payload(
 
     return {
         "cell_id": cell_id,
+        "protocol": "modbus_tcp",
+        "device_type": "cobot_cell",
         "timestamp": timestamp or datetime.now(UTC).isoformat(),
         "status": {
             "part_present": bool(readings["part_present"]),

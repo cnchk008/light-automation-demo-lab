@@ -2,28 +2,35 @@
 
 A small, runnable demo for a machine-tending light automation cell.
 
-It simulates a Modbus TCP device, reads the cell state through a gateway, converts the register values into JSON, and publishes the result to MQTT.
+It simulates a Modbus TCP cobot and a Profinet part feeder, reads both devices through gateways, converts their machine-facing data into JSON, and publishes the results to MQTT.
 
 ## What it shows
 
 - A cobot cell simulator exposing eight Modbus holding registers.
+- A Profinet-style cyclic I/O part feeder simulator.
 - A Modbus-to-MQTT gateway that publishes production status.
+- A Profinet-to-MQTT gateway that publishes feeder status.
 - A local Mosquitto broker for testing.
 - A subscriber helper that prints the MQTT messages.
-- A browser dashboard for live cell visualization.
+- A browser dashboard for live device visualization.
 - A simple ROI calculator for the automation business case.
 
 ## Architecture
 
 ```text
-Modbus simulator -> Modbus-to-MQTT gateway -> MQTT broker -> subscriber/dashboard
+Modbus cobot simulator -------> Modbus-to-MQTT gateway ----\
+                                                           +-> MQTT broker -> subscriber/dashboard
+Profinet feeder simulator ---> Profinet-to-MQTT gateway ---/
 ```
 
-The main topic is:
+The main topics are:
 
 ```text
 factory/light_automation/cobot_cell_01/status
+factory/light_automation/profinet_feeder_01/status
 ```
+
+The dashboard and subscriber use the wildcard topic `factory/light_automation/+/status` when run with Docker, so both devices appear in the same stream.
 
 ## Run with Docker
 
@@ -31,7 +38,7 @@ factory/light_automation/cobot_cell_01/status
 docker compose up --build
 ```
 
-You should see the simulator updating registers, the gateway publishing JSON, and the subscriber printing messages.
+You should see the Modbus simulator updating registers, the Profinet simulator sending cyclic process images, both gateways publishing JSON, and the subscriber printing messages from both devices.
 
 The MQTT broker runs on port `1883` inside Docker and is exposed on your Mac as `1884` to avoid conflicts with any existing local MQTT broker.
 
@@ -64,13 +71,15 @@ If you run the Python scripts on your Mac while the MQTT broker is running in Do
 ```bash
 python src/modbus_simulator.py
 MQTT_PORT=1884 python src/modbus_to_mqtt_gateway.py
-MQTT_PORT=1884 python src/mqtt_subscriber.py
-MQTT_PORT=1884 DASHBOARD_HOST=127.0.0.1 python src/dashboard.py
+PROFINET_HOST=127.0.0.1 MQTT_PORT=1884 python src/profinet_to_mqtt_gateway.py
+PROFINET_GATEWAY_HOST=127.0.0.1 python src/profinet_simulator.py
+MQTT_PORT=1884 MQTT_TOPIC_FILTER='factory/light_automation/+/status' python src/mqtt_subscriber.py
+MQTT_PORT=1884 MQTT_TOPIC_FILTER='factory/light_automation/+/status' DASHBOARD_HOST=127.0.0.1 python src/dashboard.py
 ```
 
 Then open `http://localhost:8080`.
 
-## Register Map
+## Modbus Register Map
 
 | Address | Name | Meaning |
 | --- | --- | --- |
@@ -83,11 +92,27 @@ Then open `http://localhost:8080`.
 | 6 | `average_cycle_time_seconds` | simulated average cycle time |
 | 7 | `downtime_seconds` | accumulated simulated downtime |
 
+## Profinet Process Image
+
+The Profinet feeder simulator sends a compact binary process image over UDP to keep the demo runnable in Docker without raw industrial Ethernet privileges. The gateway treats that process image as cyclic Profinet I/O and normalizes it to MQTT.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `feeder_running` | byte | 1 when the feeder is moving parts |
+| `transfer_ready` | byte | 1 when a part is ready for the cobot |
+| `buffer_level_percent` | unsigned 16-bit | feeder buffer level |
+| `fault_code` | unsigned 16-bit | 0, 301, 302, or 303 |
+| `feed_count` | unsigned 16-bit | completed simulated feeds |
+| `jam_count` | unsigned 16-bit | accumulated simulated jams |
+| `uptime_seconds` | unsigned 16-bit | simulated feeder uptime |
+
 ## Example Payload
 
 ```json
 {
   "cell_id": "cobot_cell_01",
+  "protocol": "modbus_tcp",
+  "device_type": "cobot_cell",
   "timestamp": "2026-06-03T09:00:00+00:00",
   "status": {
     "part_present": true,
@@ -101,6 +126,27 @@ Then open `http://localhost:8080`.
     "cycle_count": 42,
     "average_cycle_time_seconds": 11,
     "downtime_seconds": 0
+  }
+}
+```
+
+```json
+{
+  "cell_id": "profinet_feeder_01",
+  "protocol": "profinet",
+  "device_type": "part_feeder",
+  "timestamp": "2026-06-03T09:00:00+00:00",
+  "status": {
+    "feeder_running": true,
+    "transfer_ready": true,
+    "buffer_level_percent": 74,
+    "fault_code": 0,
+    "fault_label": "none"
+  },
+  "metrics": {
+    "feed_count": 18,
+    "jam_count": 1,
+    "uptime_seconds": 120
   }
 }
 ```
