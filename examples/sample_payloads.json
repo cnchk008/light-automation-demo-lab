@@ -54,5 +54,23 @@
       "jam_count": 1,
       "uptime_seconds": 120
     }
+  },
+  {
+    "cell_id": "safety_light_curtain_01",
+    "protocol": "profinet_safety",
+    "device_type": "light_curtain",
+    "timestamp": "2026-06-03T09:01:00+00:00",
+    "status": {
+      "beam_clear": false,
+      "muted": false,
+      "reset_required": true,
+      "ossd_outputs_on": false,
+      "fault_code": 401,
+      "fault_label": "beam_interrupted"
+    },
+    "metrics": {
+      "interruption_count": 4,
+      "last_interruption_ms": 620
+    }
   }
 ]

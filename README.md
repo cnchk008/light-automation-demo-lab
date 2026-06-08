@@ -2,14 +2,16 @@
 
 A small, runnable demo for a machine-tending light automation cell.
 
-It simulates a Modbus TCP cobot and a Profinet part feeder, reads both devices through gateways, converts their machine-facing data into JSON, and publishes the results to MQTT.
+It simulates a Modbus TCP cobot, a Profinet part feeder, and a safety light curtain, reads the devices through gateways, converts their machine-facing data into JSON, and publishes the results to MQTT.
 
 ## What it shows
 
 - A cobot cell simulator exposing eight Modbus holding registers.
 - A Profinet-style cyclic I/O part feeder simulator.
+- A Profinet Safety-style light curtain simulator.
 - A Modbus-to-MQTT gateway that publishes production status.
 - A Profinet-to-MQTT gateway that publishes feeder status.
+- A safety-to-MQTT gateway that publishes beam and OSSD status.
 - A local Mosquitto broker for testing.
 - A subscriber helper that prints the MQTT messages.
 - A browser dashboard for live device visualization.
@@ -21,6 +23,7 @@ It simulates a Modbus TCP cobot and a Profinet part feeder, reads both devices t
 Modbus cobot simulator -------> Modbus-to-MQTT gateway ----\
                                                            +-> MQTT broker -> subscriber/dashboard
 Profinet feeder simulator ---> Profinet-to-MQTT gateway ---/
+Safety light curtain --------> Safety-to-MQTT gateway -----/
 ```
 
 The main topics are:
@@ -28,6 +31,7 @@ The main topics are:
 ```text
 factory/light_automation/cobot_cell_01/status
 factory/light_automation/profinet_feeder_01/status
+factory/light_automation/safety_light_curtain_01/status
 ```
 
 The dashboard and subscriber use the wildcard topic `factory/light_automation/+/status` when run with Docker, so both devices appear in the same stream.
@@ -38,7 +42,7 @@ The dashboard and subscriber use the wildcard topic `factory/light_automation/+/
 docker compose up --build
 ```
 
-You should see the Modbus simulator updating registers, the Profinet simulator sending cyclic process images, both gateways publishing JSON, and the subscriber printing messages from both devices.
+You should see the Modbus simulator updating registers, the Profinet simulator sending feeder process images, the light curtain simulator sending safety process images, all gateways publishing JSON, and the subscriber printing messages from every device.
 
 The MQTT broker runs on port `1883` inside Docker and is exposed on your Mac as `1884` to avoid conflicts with any existing local MQTT broker.
 
@@ -73,6 +77,8 @@ python src/modbus_simulator.py
 MQTT_PORT=1884 python src/modbus_to_mqtt_gateway.py
 PROFINET_HOST=127.0.0.1 MQTT_PORT=1884 python src/profinet_to_mqtt_gateway.py
 PROFINET_GATEWAY_HOST=127.0.0.1 python src/profinet_simulator.py
+SAFETY_HOST=127.0.0.1 MQTT_PORT=1884 python src/safety_to_mqtt_gateway.py
+SAFETY_GATEWAY_HOST=127.0.0.1 python src/safety_light_curtain_simulator.py
 MQTT_PORT=1884 MQTT_TOPIC_FILTER='factory/light_automation/+/status' python src/mqtt_subscriber.py
 MQTT_PORT=1884 MQTT_TOPIC_FILTER='factory/light_automation/+/status' DASHBOARD_HOST=127.0.0.1 python src/dashboard.py
 ```
@@ -105,6 +111,20 @@ The Profinet feeder simulator sends a compact binary process image over UDP to k
 | `feed_count` | unsigned 16-bit | completed simulated feeds |
 | `jam_count` | unsigned 16-bit | accumulated simulated jams |
 | `uptime_seconds` | unsigned 16-bit | simulated feeder uptime |
+
+## Safety Light Curtain Process Image
+
+The light curtain simulator sends a separate compact safety process image over UDP. It represents the kind of state a safety PLC or safety I/O block would expose after a light curtain is wired into the cell.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `beam_clear` | byte | 1 when the protected field is clear |
+| `muted` | byte | 1 when muting is active |
+| `reset_required` | byte | 1 when a manual reset is latched |
+| `ossd_outputs_on` | byte | 1 when safety outputs are enabled |
+| `fault_code` | unsigned 16-bit | 0, 401, 402, or 403 |
+| `interruption_count` | unsigned 16-bit | accumulated beam interruptions |
+| `last_interruption_ms` | unsigned 16-bit | simulated duration of the last stop |
 
 ## Example Payload
 
@@ -147,6 +167,27 @@ The Profinet feeder simulator sends a compact binary process image over UDP to k
     "feed_count": 18,
     "jam_count": 1,
     "uptime_seconds": 120
+  }
+}
+```
+
+```json
+{
+  "cell_id": "safety_light_curtain_01",
+  "protocol": "profinet_safety",
+  "device_type": "light_curtain",
+  "timestamp": "2026-06-03T09:00:00+00:00",
+  "status": {
+    "beam_clear": false,
+    "muted": false,
+    "reset_required": true,
+    "ossd_outputs_on": false,
+    "fault_code": 401,
+    "fault_label": "beam_interrupted"
+  },
+  "metrics": {
+    "interruption_count": 4,
+    "last_interruption_ms": 620
   }
 }
 ```

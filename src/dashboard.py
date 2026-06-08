@@ -508,6 +508,7 @@ DASHBOARD_HTML = """<!doctype html>
     function protocolLabel(protocol) {
       if (protocol === "modbus_tcp") return "Modbus TCP";
       if (protocol === "profinet") return "Profinet";
+      if (protocol === "profinet_safety") return "Profinet Safety";
       return protocol || "Unknown";
     }
 
@@ -528,6 +529,17 @@ DASHBOARD_HTML = """<!doctype html>
             a: Number(metrics.feed_count || 0),
             b: Number(status.buffer_level_percent || 0),
             c: Number(metrics.jam_count || 0)
+          }
+        };
+      }
+
+      if (payload.device_type === "light_curtain") {
+        return {
+          labels: ["interrupts", "last ms", "OSSD"],
+          point: {
+            a: Number(metrics.interruption_count || 0),
+            b: Number(metrics.last_interruption_ms || 0),
+            c: status.ossd_outputs_on ? 1 : 0
           }
         };
       }
@@ -586,17 +598,18 @@ DASHBOARD_HTML = """<!doctype html>
       const metrics = payload.metrics;
       const faulted = Number(status.fault_code) !== 0;
       const isFeeder = payload.device_type === "part_feeder";
+      const isLightCurtain = payload.device_type === "light_curtain";
       const trend = trendFor(payload);
       activeTrendLabels = trend.labels;
 
       ids.dot.className = "dot ok";
       ids.connection.textContent = "Live";
       ids.cellId.textContent = `${payload.cell_id || "device"} · ${protocolLabel(payload.protocol)}`;
-      ids.machine.classList.toggle("busy", Boolean(isFeeder ? status.feeder_running : status.robot_busy));
-      ids.machine.classList.toggle("fault", faulted);
-      ids.part.classList.toggle("present", Boolean(isFeeder ? status.transfer_ready : status.part_present));
-      ids.faultBanner.classList.toggle("warning", faulted);
-      ids.faultLabel.textContent = faulted ? status.fault_label.replaceAll("_", " ") : "Normal";
+      ids.machine.classList.toggle("busy", Boolean(isFeeder ? status.feeder_running : isLightCurtain ? !status.beam_clear : status.robot_busy));
+      ids.machine.classList.toggle("fault", faulted || (isLightCurtain && !status.ossd_outputs_on));
+      ids.part.classList.toggle("present", Boolean(isFeeder ? status.transfer_ready : isLightCurtain ? !status.beam_clear : status.part_present));
+      ids.faultBanner.classList.toggle("warning", faulted || (isLightCurtain && !status.ossd_outputs_on));
+      ids.faultLabel.textContent = faulted ? status.fault_label.replaceAll("_", " ") : isLightCurtain ? yesNo(status.ossd_outputs_on, "Protected", "Stopped") : "Normal";
       ids.faultCode.textContent = `Fault ${status.fault_code}`;
 
       if (isFeeder) {
@@ -615,6 +628,23 @@ DASHBOARD_HTML = """<!doctype html>
         ids.cycleTime.textContent = status.buffer_level_percent;
         ids.cycleTimeUnit.textContent = "%";
         ids.downtime.textContent = metrics.jam_count;
+        ids.downtimeUnit.textContent = "";
+      } else if (isLightCurtain) {
+        ids.safetyGateLabel.textContent = "Beam";
+        ids.estopLabel.textContent = "OSSD";
+        ids.robotLabel.textContent = "Muting";
+        ids.partPresentLabel.textContent = "Reset";
+        ids.safetyGate.textContent = yesNo(status.beam_clear, "Clear", "Interrupted");
+        ids.estop.textContent = yesNo(status.ossd_outputs_on, "On", "Off");
+        ids.robot.textContent = yesNo(status.muted, "Active", "Off");
+        ids.partPresent.textContent = yesNo(status.reset_required, "Required", "Ready");
+        ids.cyclesLabel.textContent = "Interruptions";
+        ids.cycleTimeLabel.textContent = "Last Stop";
+        ids.downtimeLabel.textContent = "OSSD";
+        ids.cycles.textContent = metrics.interruption_count;
+        ids.cycleTime.textContent = metrics.last_interruption_ms;
+        ids.cycleTimeUnit.textContent = "ms";
+        ids.downtime.textContent = yesNo(status.ossd_outputs_on, "On", "Off");
         ids.downtimeUnit.textContent = "";
       } else {
         ids.safetyGateLabel.textContent = "Safety Gate";

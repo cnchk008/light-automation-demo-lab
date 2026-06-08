@@ -95,6 +95,34 @@ services:
       PROFINET_PORT: 34964
       PROFINET_CYCLE_TIME_MS: 1000
 
+  safety-gateway:
+    build: .
+    restart: unless-stopped
+    command: python src/safety_to_mqtt_gateway.py
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    environment:
+      SAFETY_HOST: 0.0.0.0
+      SAFETY_PORT: 34965
+      SAFETY_DEVICE_ID: safety_light_curtain_01
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      SAFETY_MQTT_TOPIC: factory/light_automation/safety_light_curtain_01/status
+    ports:
+      - "34965:34965/udp"
+
+  safety-light-curtain:
+    build: .
+    restart: unless-stopped
+    command: python src/safety_light_curtain_simulator.py
+    depends_on:
+      - safety-gateway
+    environment:
+      SAFETY_GATEWAY_HOST: safety-gateway
+      SAFETY_PORT: 34965
+      SAFETY_CYCLE_TIME_MS: 500
+
   subscriber:
     build: .
     restart: unless-stopped
