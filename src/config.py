@@ -24,6 +24,12 @@ SAFETY_PORT = _int_env("SAFETY_PORT", 34965)
 SAFETY_DEVICE_ID = os.getenv("SAFETY_DEVICE_ID", "safety_light_curtain_01")
 SAFETY_CYCLE_TIME_MS = _int_env("SAFETY_CYCLE_TIME_MS", 500)
 
+INSPECTION_HOST = os.getenv("INSPECTION_HOST", "127.0.0.1")
+INSPECTION_GATEWAY_HOST = os.getenv("INSPECTION_GATEWAY_HOST", "127.0.0.1")
+INSPECTION_PORT = _int_env("INSPECTION_PORT", 44818)
+INSPECTION_DEVICE_ID = os.getenv("INSPECTION_DEVICE_ID", "vision_camera_01")
+INSPECTION_CYCLE_TIME_MS = _int_env("INSPECTION_CYCLE_TIME_MS", 1200)
+
 MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
 MQTT_PORT = _int_env("MQTT_PORT", 1883)
 MQTT_TOPIC = os.getenv(
@@ -37,6 +43,10 @@ PROFINET_MQTT_TOPIC = os.getenv(
 SAFETY_MQTT_TOPIC = os.getenv(
     "SAFETY_MQTT_TOPIC",
     "factory/light_automation/safety_light_curtain_01/status",
+)
+INSPECTION_MQTT_TOPIC = os.getenv(
+    "INSPECTION_MQTT_TOPIC",
+    "factory/light_automation/vision_camera_01/status",
 )
 MQTT_TOPIC_FILTER = os.getenv("MQTT_TOPIC_FILTER", MQTT_TOPIC)
 

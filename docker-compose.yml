@@ -123,6 +123,34 @@ services:
       SAFETY_PORT: 34965
       SAFETY_CYCLE_TIME_MS: 500
 
+  inspection-gateway:
+    build: .
+    restart: unless-stopped
+    command: python src/inspection_to_mqtt_gateway.py
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    environment:
+      INSPECTION_HOST: 0.0.0.0
+      INSPECTION_PORT: 44818
+      INSPECTION_DEVICE_ID: vision_camera_01
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      INSPECTION_MQTT_TOPIC: factory/light_automation/vision_camera_01/status
+    ports:
+      - "44818:44818/udp"
+
+  vision-inspection:
+    build: .
+    restart: unless-stopped
+    command: python src/vision_inspection_simulator.py
+    depends_on:
+      - inspection-gateway
+    environment:
+      INSPECTION_GATEWAY_HOST: inspection-gateway
+      INSPECTION_PORT: 44818
+      INSPECTION_CYCLE_TIME_MS: 1200
+
   subscriber:
     build: .
     restart: unless-stopped

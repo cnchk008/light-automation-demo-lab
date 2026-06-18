@@ -72,5 +72,24 @@
       "interruption_count": 4,
       "last_interruption_ms": 620
     }
+  },
+  {
+    "cell_id": "vision_camera_01",
+    "protocol": "ethernet_ip",
+    "device_type": "vision_inspection",
+    "timestamp": "2026-06-03T09:01:00+00:00",
+    "status": {
+      "camera_online": true,
+      "part_detected": true,
+      "inspection_passed": false,
+      "confidence_percent": 78,
+      "fault_code": 502,
+      "fault_label": "low_confidence"
+    },
+    "metrics": {
+      "inspection_count": 13,
+      "reject_count": 3,
+      "average_inspection_ms": 210
+    }
   }
 ]

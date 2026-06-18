@@ -2,16 +2,18 @@
 
 A small, runnable demo for a machine-tending light automation cell.
 
-It simulates a Modbus TCP cobot, a Profinet part feeder, and a safety light curtain, reads the devices through gateways, converts their machine-facing data into JSON, and publishes the results to MQTT.
+It simulates a Modbus TCP cobot, a Profinet part feeder, a safety light curtain, and a vision inspection camera, reads the devices through gateways, converts their machine-facing data into JSON, and publishes the results to MQTT.
 
 ## What it shows
 
 - A cobot cell simulator exposing eight Modbus holding registers.
 - A Profinet-style cyclic I/O part feeder simulator.
 - A Profinet Safety-style light curtain simulator.
+- An EtherNet/IP-style vision inspection camera simulator.
 - A Modbus-to-MQTT gateway that publishes production status.
 - A Profinet-to-MQTT gateway that publishes feeder status.
 - A safety-to-MQTT gateway that publishes beam and OSSD status.
+- An inspection-to-MQTT gateway that publishes pass/fail inspection status.
 - A local Mosquitto broker for testing.
 - A subscriber helper that prints the MQTT messages.
 - A browser dashboard for live device visualization.
@@ -24,6 +26,7 @@ Modbus cobot simulator -------> Modbus-to-MQTT gateway ----\
                                                            +-> MQTT broker -> subscriber/dashboard
 Profinet feeder simulator ---> Profinet-to-MQTT gateway ---/
 Safety light curtain --------> Safety-to-MQTT gateway -----/
+Vision inspection camera ----> Inspection-to-MQTT gateway -/
 ```
 
 The main topics are:
@@ -32,6 +35,7 @@ The main topics are:
 factory/light_automation/cobot_cell_01/status
 factory/light_automation/profinet_feeder_01/status
 factory/light_automation/safety_light_curtain_01/status
+factory/light_automation/vision_camera_01/status
 ```
 
 The dashboard and subscriber use the wildcard topic `factory/light_automation/+/status` when run with Docker, so both devices appear in the same stream.
@@ -42,7 +46,7 @@ The dashboard and subscriber use the wildcard topic `factory/light_automation/+/
 docker compose up --build
 ```
 
-You should see the Modbus simulator updating registers, the Profinet simulator sending feeder process images, the light curtain simulator sending safety process images, all gateways publishing JSON, and the subscriber printing messages from every device.
+You should see the Modbus simulator updating registers, the Profinet simulator sending feeder process images, the light curtain simulator sending safety process images, the vision simulator sending inspection results, all gateways publishing JSON, and the subscriber printing messages from every device.
 
 The MQTT broker runs on port `1883` inside Docker and is exposed on your Mac as `1884` to avoid conflicts with any existing local MQTT broker.
 
@@ -79,6 +83,8 @@ PROFINET_HOST=127.0.0.1 MQTT_PORT=1884 python src/profinet_to_mqtt_gateway.py
 PROFINET_GATEWAY_HOST=127.0.0.1 python src/profinet_simulator.py
 SAFETY_HOST=127.0.0.1 MQTT_PORT=1884 python src/safety_to_mqtt_gateway.py
 SAFETY_GATEWAY_HOST=127.0.0.1 python src/safety_light_curtain_simulator.py
+INSPECTION_HOST=127.0.0.1 MQTT_PORT=1884 python src/inspection_to_mqtt_gateway.py
+INSPECTION_GATEWAY_HOST=127.0.0.1 python src/vision_inspection_simulator.py
 MQTT_PORT=1884 MQTT_TOPIC_FILTER='factory/light_automation/+/status' python src/mqtt_subscriber.py
 MQTT_PORT=1884 MQTT_TOPIC_FILTER='factory/light_automation/+/status' DASHBOARD_HOST=127.0.0.1 python src/dashboard.py
 ```
@@ -125,6 +131,21 @@ The light curtain simulator sends a separate compact safety process image over U
 | `fault_code` | unsigned 16-bit | 0, 401, 402, or 403 |
 | `interruption_count` | unsigned 16-bit | accumulated beam interruptions |
 | `last_interruption_ms` | unsigned 16-bit | simulated duration of the last stop |
+
+## Vision Inspection Process Image
+
+The vision inspection simulator sends an EtherNet/IP-style process image for a smart camera checking parts after handling.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `camera_online` | byte | 1 when the inspection camera is available |
+| `part_detected` | byte | 1 when the camera sees a part |
+| `inspection_passed` | byte | 1 when the latest inspection passed |
+| `confidence_percent` | unsigned 16-bit | confidence score for the latest result |
+| `fault_code` | unsigned 16-bit | 0, 501, 502, or 503 |
+| `inspection_count` | unsigned 16-bit | completed simulated inspections |
+| `reject_count` | unsigned 16-bit | failed simulated inspections |
+| `average_inspection_ms` | unsigned 16-bit | simulated average inspection time |
 
 ## Example Payload
 
@@ -188,6 +209,28 @@ The light curtain simulator sends a separate compact safety process image over U
   "metrics": {
     "interruption_count": 4,
     "last_interruption_ms": 620
+  }
+}
+```
+
+```json
+{
+  "cell_id": "vision_camera_01",
+  "protocol": "ethernet_ip",
+  "device_type": "vision_inspection",
+  "timestamp": "2026-06-03T09:00:00+00:00",
+  "status": {
+    "camera_online": true,
+    "part_detected": true,
+    "inspection_passed": false,
+    "confidence_percent": 78,
+    "fault_code": 502,
+    "fault_label": "low_confidence"
+  },
+  "metrics": {
+    "inspection_count": 13,
+    "reject_count": 3,
+    "average_inspection_ms": 210
   }
 }
 ```

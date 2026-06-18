@@ -509,6 +509,7 @@ DASHBOARD_HTML = """<!doctype html>
       if (protocol === "modbus_tcp") return "Modbus TCP";
       if (protocol === "profinet") return "Profinet";
       if (protocol === "profinet_safety") return "Profinet Safety";
+      if (protocol === "ethernet_ip") return "EtherNet/IP";
       return protocol || "Unknown";
     }
 
@@ -540,6 +541,17 @@ DASHBOARD_HTML = """<!doctype html>
             a: Number(metrics.interruption_count || 0),
             b: Number(metrics.last_interruption_ms || 0),
             c: status.ossd_outputs_on ? 1 : 0
+          }
+        };
+      }
+
+      if (payload.device_type === "vision_inspection") {
+        return {
+          labels: ["inspections", "confidence", "rejects"],
+          point: {
+            a: Number(metrics.inspection_count || 0),
+            b: Number(status.confidence_percent || 0),
+            c: Number(metrics.reject_count || 0)
           }
         };
       }
@@ -599,17 +611,18 @@ DASHBOARD_HTML = """<!doctype html>
       const faulted = Number(status.fault_code) !== 0;
       const isFeeder = payload.device_type === "part_feeder";
       const isLightCurtain = payload.device_type === "light_curtain";
+      const isVisionInspection = payload.device_type === "vision_inspection";
       const trend = trendFor(payload);
       activeTrendLabels = trend.labels;
 
       ids.dot.className = "dot ok";
       ids.connection.textContent = "Live";
       ids.cellId.textContent = `${payload.cell_id || "device"} · ${protocolLabel(payload.protocol)}`;
-      ids.machine.classList.toggle("busy", Boolean(isFeeder ? status.feeder_running : isLightCurtain ? !status.beam_clear : status.robot_busy));
+      ids.machine.classList.toggle("busy", Boolean(isFeeder ? status.feeder_running : isLightCurtain ? !status.beam_clear : isVisionInspection ? status.camera_online : status.robot_busy));
       ids.machine.classList.toggle("fault", faulted || (isLightCurtain && !status.ossd_outputs_on));
-      ids.part.classList.toggle("present", Boolean(isFeeder ? status.transfer_ready : isLightCurtain ? !status.beam_clear : status.part_present));
+      ids.part.classList.toggle("present", Boolean(isFeeder ? status.transfer_ready : isLightCurtain ? !status.beam_clear : isVisionInspection ? status.part_detected : status.part_present));
       ids.faultBanner.classList.toggle("warning", faulted || (isLightCurtain && !status.ossd_outputs_on));
-      ids.faultLabel.textContent = faulted ? status.fault_label.replaceAll("_", " ") : isLightCurtain ? yesNo(status.ossd_outputs_on, "Protected", "Stopped") : "Normal";
+      ids.faultLabel.textContent = faulted ? status.fault_label.replaceAll("_", " ") : isLightCurtain ? yesNo(status.ossd_outputs_on, "Protected", "Stopped") : isVisionInspection ? yesNo(status.inspection_passed, "Pass", "Ready") : "Normal";
       ids.faultCode.textContent = `Fault ${status.fault_code}`;
 
       if (isFeeder) {
@@ -645,6 +658,23 @@ DASHBOARD_HTML = """<!doctype html>
         ids.cycleTime.textContent = metrics.last_interruption_ms;
         ids.cycleTimeUnit.textContent = "ms";
         ids.downtime.textContent = yesNo(status.ossd_outputs_on, "On", "Off");
+        ids.downtimeUnit.textContent = "";
+      } else if (isVisionInspection) {
+        ids.safetyGateLabel.textContent = "Camera";
+        ids.estopLabel.textContent = "Part";
+        ids.robotLabel.textContent = "Result";
+        ids.partPresentLabel.textContent = "Fault";
+        ids.safetyGate.textContent = yesNo(status.camera_online, "Online", "Offline");
+        ids.estop.textContent = yesNo(status.part_detected, "Detected", "Missing");
+        ids.robot.textContent = yesNo(status.inspection_passed, "Pass", "Reject");
+        ids.partPresent.textContent = titleCase(status.fault_label);
+        ids.cyclesLabel.textContent = "Inspections";
+        ids.cycleTimeLabel.textContent = "Confidence";
+        ids.downtimeLabel.textContent = "Rejects";
+        ids.cycles.textContent = metrics.inspection_count;
+        ids.cycleTime.textContent = status.confidence_percent;
+        ids.cycleTimeUnit.textContent = "%";
+        ids.downtime.textContent = metrics.reject_count;
         ids.downtimeUnit.textContent = "";
       } else {
         ids.safetyGateLabel.textContent = "Safety Gate";

@@ -16,6 +16,10 @@ Profinet is common for real-time industrial I/O, especially around PLCs, drives,
 
 Safety devices such as light curtains are usually wired through safety relays, safety PLCs, or safety I/O using certified safety protocols. This demo models the useful status signals, such as OSSD output state and reset requirements, without claiming to implement a certified safety stack.
 
+## EtherNet/IP
+
+EtherNet/IP is common for PLC-connected devices such as smart cameras, drives, and I/O blocks. This demo uses it as the inspection camera's machine-facing side before normalizing the result to MQTT.
+
 ## Why bridge them?
 
-The bridge keeps the machine-facing protocol close to the automation cell while exposing a friendlier data stream for applications. In this repo, eight Modbus registers, one Profinet feeder process image, and one light curtain safety image become JSON MQTT status payloads.
+The bridge keeps the machine-facing protocol close to the automation cell while exposing a friendlier data stream for applications. In this repo, eight Modbus registers, one Profinet feeder process image, one light curtain safety image, and one EtherNet/IP-style inspection result become JSON MQTT status payloads.
